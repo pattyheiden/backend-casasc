@@ -37,7 +37,15 @@ function buildOrderBy(sort: PropertyListQuery['sort']): Prisma.PropertyOrderByWi
   if (sort === 'price-desc') return [{ price: 'desc' }];
   if (sort === 'most-viewed') return [{ views: 'desc' }, { createdAt: 'desc' }];
 
-  return [{ isPremium: 'desc' }, { createdAt: 'desc' }];
+  return [{ isPremium: 'desc' }, { advertiser: { type: 'asc' } }, { createdAt: 'desc' }];
+}
+
+function humanizeSlug(slug: string): string {
+  return slug
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 export async function listProperties(query: PropertyListQuery) {
@@ -52,22 +60,41 @@ export async function listProperties(query: PropertyListQuery) {
     advertiser: query.brokerOnly ? { type: 'broker', isVerified: true } : undefined
   };
 
-  if (query.query) {
-    where.OR = [
-      { title: { contains: query.query, mode: 'insensitive' } },
-      { description: { contains: query.query, mode: 'insensitive' } },
-      { city: { name: { contains: query.query, mode: 'insensitive' } } },
-      { neighborhood: { name: { contains: query.query, mode: 'insensitive' } } }
-    ];
-  }
-
   const properties = await prisma.property.findMany({
     where,
     include: includeRelations,
     orderBy: buildOrderBy(query.sort)
   });
 
-  return properties.map(mapProperty);
+  const featureSlugs = query.features?.map(toSlug) ?? [];
+  const queryTerms = toSlug(query.query ?? '')
+    .split('-')
+    .filter(Boolean);
+
+  return properties
+    .filter((property) => {
+      if (featureSlugs.length) {
+        const propertyFeatureSlugs = property.features.map(toSlug);
+        if (!featureSlugs.every((feature) => propertyFeatureSlugs.includes(feature))) return false;
+      }
+
+      if (queryTerms.length) {
+        const searchable = toSlug(
+          [
+            property.title,
+            property.city.name,
+            property.neighborhood.name,
+            property.address ?? '',
+            property.features.join(' ')
+          ].join(' ')
+        );
+
+        if (!queryTerms.every((term) => searchable.includes(term))) return false;
+      }
+
+      return true;
+    })
+    .map(mapProperty);
 }
 
 export async function getPublishedProperty(id: string) {
@@ -106,12 +133,14 @@ export async function createPropertyDraft(input: {
 }) {
   const citySlug = input.citySlug ?? toSlug(input.city);
   const neighborhoodSlug = input.neighborhoodSlug ?? toSlug(input.neighborhood);
+  const cityName = input.citySlug ? input.city : humanizeSlug(input.city);
+  const neighborhoodName = input.neighborhoodSlug ? input.neighborhood : humanizeSlug(input.neighborhood);
 
   const city = await prisma.city.upsert({
     where: { slug: citySlug },
-    update: { name: input.city },
+    update: { name: cityName },
     create: {
-      name: input.city,
+      name: cityName,
       slug: citySlug,
       image: ''
     }
@@ -124,9 +153,9 @@ export async function createPropertyDraft(input: {
         slug: neighborhoodSlug
       }
     },
-    update: { name: input.neighborhood },
+    update: { name: neighborhoodName },
     create: {
-      name: input.neighborhood,
+      name: neighborhoodName,
       slug: neighborhoodSlug,
       cityId: city.id
     }

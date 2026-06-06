@@ -12,10 +12,11 @@ export async function buildApp() {
   const app = Fastify({
     logger: true
   });
+  const corsOrigins = env.CORS_ORIGIN.split(',').map((origin) => origin.trim());
 
   await app.register(helmet);
   await app.register(cors, {
-    origin: env.CORS_ORIGIN === '*' ? true : env.CORS_ORIGIN
+    origin: env.CORS_ORIGIN === '*' ? true : corsOrigins
   });
   await app.register(rateLimit, {
     max: env.RATE_LIMIT_MAX,

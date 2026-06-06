@@ -41,6 +41,12 @@ Por padrao a API sobe em `http://localhost:3333`. No front, defina:
 VITE_API_URL=http://localhost:3333
 ```
 
+Se quiser restringir CORS em producao, use uma lista separada por virgulas:
+
+```bash
+CORS_ORIGIN=https://casa-sc.com.br,https://www.casa-sc.com.br
+```
+
 ## Endpoints
 
 - `GET /health`
